@@ -1,7 +1,6 @@
 ---
 title: "Employee Attrition Analysis"
 author: "Matiullah Hasher"
-date: "5/3/2020"
 output:
   rmarkdown::html_document:
     theme: yeti
@@ -27,13 +26,17 @@ pre[class] {
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 ```
 
-## The tabs below contain the Hypothesis Test, the Prediction Model, and the code for the Shiny Web Interface {.tabset}
+## The tabs below contain the Hypothesis Test, Data Preprocessing & Data Visualization, the Prediction Model, and the code/tutorial on creating the Shiny Web Interface {.tabset}
 
 ### Hypothesis Testing
 
-**According to a Gallup Poll in 2018, 21% of millenials have left their job in the past year (poll was conducted in 2018 so this falls within our dataset time of 2017).**  
-**The hypothesis that we will be testing is that the IBM dataset millenials are not in line with the nationwide average.**  
-**H0: attrition for millenials is equal to .21, h1: attrition for millenials is not equal to .21.**
+***
+
+According to a 2018 Gallup Poll, 21% of millenials have left their job in the past year. The poll was conducted in 2018 so this falls within our dataset time of 2017.
+
+The hypothesis that we will be testing is that the millenials in the IBM dataset are not in line with the nationwide average.  
+
+H0: attrition for millenials is equal to .21, h1: attrition for millenials is not equal to .21.
 
 
 
@@ -95,20 +98,19 @@ print(paste0("the lower bound is ", lowerBound))
 ```
 
 ***
-Since the sample mean (millenial attrition) of 0.2 falls between the confidence interval of 0.17 and 0.24, we reject the null hypothesis.
+The sample mean of 0.2 falls between the confidence interval of 0.17 and 0.24, therefore, we reject the null hypothesis.
 
+***
 
 
 ### Data Preprocessing & Data Visualization
-
-
-
+***
 Read in the data
 ```{r}
 data <- read.csv('data/employees.csv',fileEncoding="UTF-8-BOM")
 ```
 ***
-Check to see if there is missing data and drop columns that do not provide any predicting value
+Drop columns that do not provide any predicting value
 ```{r}
 # verify that there is only one unique value in these columns
 unique(data$EmployeeCount) 
@@ -148,7 +150,7 @@ data %>%
 ```
 
 ***
-The bar chart below shows the total number of attritions by age. This chart shows a trend of attrition being higher for those between 25-45.
+Visualizaing attritions by age reveals greater attrition occuring for those between the ages of 25-45.
 ```{r}
 # attrition count by age
 ggplot(data=data, aes(Age)) + 
@@ -162,7 +164,7 @@ ggplot(data=data, aes(Age)) +
 ```
 
 ***
-The chart below also looks at attrition by age. However, this time the proportion of attrition is the focus at each age. This shows that the attrition in the 25-45 age range is not significantly higher when the total number of employees is considered. 
+Here is another look at attrition by age. However, this time the proportion of attrition is the focus at each age. It is shown that the attrition in the 25-45 age range is not significantly higher when the total number of employees is considered. 
 ```{r}
 # proportion of attrtion by age
 ggplot(data, aes(x = Age)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Age", y = "Attrition Proportion") + ggtitle("Attrition by Years in Current Role") + theme(plot.title = element_text(hjust = 0.5))
@@ -183,7 +185,7 @@ ggplot(data, aes(x = JobInvolvement)) + geom_bar(aes(fill = Attrition), position
 ```
 
 ***
-No significant insight can be gained when looking at the relationship between salary hike and attrition. This was surprising as the expectation was that those who receiving larger salary hikes were less likely to attrit.
+No significant insight can be gained when looking at the relationship between salary hike and attrition. This can be surprising for those expecting a negative correlation between amount of salary increase and attrition.
 ```{r}
 # proportion of attrition by salary hike
 ggplot(data, aes(x = PercentSalaryHike)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Salary Hike (%)", y = "Attrition Proportion") + ggtitle("Attrition by Salary Hike") + theme(plot.title = element_text(hjust = 0.5)) 
@@ -198,14 +200,14 @@ ggplot(data, aes(x = BusinessTravel)) + geom_bar(aes(fill = Attrition), position
 ```
 
 ***
-Human Resources, Technical Degrees, and Marketing education backgrounds are the most at risk of attriting. 
+Human Resources, Technical Degrees, and Marketing education backgrounds are the most at-risk groups of attriting. 
 ```{r}
 # proportion of attrition by education field
 ggplot(data, aes(x = EducationField)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Education Field", y = "Attrition Proportion") + ggtitle("Attrition by Education Field") + theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ***
-Sales Reps, Lab Techs, and Human Resources employees are the highest risk of attrition in terms of job role. 
+Sales Reps, Lab Techs, and Human Resources employees are the most at-risk groups of attriting. 
 ```{r}
 # proportion of attrition by job role
 ggplot(data, aes(x = JobRole)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Job Role", y = "Attrition Proportion") + ggtitle("Attrition by Job Role") + theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=30))
@@ -398,7 +400,7 @@ The visualization shows the where the ideal number of trees which is then input 
 #prune the tree to obtain the 14-node tree (14 is chosen since the plot shows it has the lowest dev which represents the test error)
 prune.tree=prune.misclass(tree.attrition,best=14)
 plot(prune.tree)
-text(prune.tree,pretty=0)
+text(prune.tree,srt=45,cex=0.66)
 
 #check performance of pruned tree on test set
 tree.pred = predict(prune.tree, test, type="class")
@@ -477,8 +479,9 @@ The best model is the stepwise model due to its superior precision. The other me
 ```{r}
 bestmodel <- step.model  
 ```
-
+***
 ### Tutorial on Shiny Web Interface
+***
 Please note that the code below is for reference. There is a separate file, shiny.R, that will need to be run to use the web interface of the prediction model. 
 
 The tutorial will consist of detailed commented code to explain all the functions used to create the Shiny product. 
