@@ -1,5 +1,6 @@
 # employee-attrition
-Shiny Attrition Model
+
+## Shiny Attrition Model
 
 ### Required Files: 
 Data folder containing the required dataset "employees.csv". 
