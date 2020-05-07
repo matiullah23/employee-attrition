@@ -1,0 +1,645 @@
+---
+title: "Employee Attrition Analysis"
+author: "Matiullah Hasher"
+date: "5/3/2020"
+output:
+  rmarkdown::html_document:
+    theme: yeti
+    
+    
+---
+
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+pre[class] {
+  max-height: 6600px;
+}
+
+```
+
+
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## The tabs below contain the Hypothesis Test, the Prediction Model, and the code for the Shiny Web Interface {.tabset}
+
+### Hypothesis Testing
+
+**According to a Gallup Poll in 2018, 21% of millenials have left their job in the past year (poll was conducted in 2018 so this falls within our dataset time of 2017).**  
+**The hypothesis that we will be testing is that the IBM dataset millenials are not in line with the nationwide average.**  
+**H0: attrition for millenials is equal to .21, h1: attrition for millenials is not equal to .21.**
+
+
+
+***
+Import dependencies
+```{r}
+#import dependencies
+require(dplyr)
+require(tidyverse)
+require(MASS)
+require(tree)
+require(randomForest)
+require(shiny)
+require(zeallot)
+require(broom)
+require(shinythemes)
+
+```
+
+***
+Import the csv and explore the first 3 rows of the dataset
+```{r}
+hypData <- read.csv('data/employees.csv',fileEncoding="UTF-8-BOM")
+head(hypData, 3)
+```
+
+
+***
+Subset data that will be used in hypothesis testing - millenials and not millenials
+```{r}
+millenials <- hypData %>% filter(hypData$Age %in% (25:34))
+notMillenials <- hypData %>% filter(!hypData$Age %in% (25:34))
+```
+
+***
+Exploring the data reveals that millenials are significantly higher attrition rate, but still below the national average of 0.21
+```{r}
+summary(millenials$Attrition)
+x <- 112/(442+112) # attrition rate for millenials
+x
+summary(notMillenials$Attrition)
+125/(791+125) #attrition rate for non-millenials
+```
+
+***
+Conduct z-testing for confidence interval
+
+```{r}
+n <- nrow(millenials)
+phat <- .21 # population annual attrition rate for millenials
+z <- 1.96 # z-score for 95% confidence interval
+SE <- sqrt(phat*(1-phat)/n)
+
+upperBound <- phat+z*SE
+print(paste0("The upper bound is ", upperBound))
+
+lowerBound <- phat-z*SE
+print(paste0("the lower bound is ", lowerBound))
+```
+
+***
+Since the sample mean (millenial attrition) of 0.2 falls between the confidence interval of 0.17 and 0.24, we reject the null hypothesis.
+
+
+
+### Data Preprocessing & Data Visualization
+
+
+
+Read in the data
+```{r}
+data <- read.csv('data/employees.csv',fileEncoding="UTF-8-BOM")
+```
+***
+Check to see if there is missing data and drop columns that do not provide any predicting value
+```{r}
+# verify that there is only one unique value in these columns
+unique(data$EmployeeCount) 
+unique(data$Over18) 
+unique(data$StandardHours)
+# EmployeeNumber is a unique id field so it does not provide any predictive value
+unique(data$EmployeeNumber)
+data<- within(data, rm(EmployeeCount, EmployeeNumber, Over18, StandardHours)) 
+```
+***
+Conduct exploratory data analysis
+```{r}
+dim(data)
+head(data)
+str(data)
+```
+***
+Filter data based on whether the employee attritted
+```{r}
+attritted <- filter(data, Attrition == "Yes")
+employed <- filter(data, Attrition == "No")
+```
+***
+The bar chart below shows that total number of employees who attrited and those who remain at the organization. In this dataset, those who attrited represent 16% of the dataset, while the other 84% is those who remain at the organization. 
+```{r}
+# attrition count 
+data %>%
+    group_by(Attrition) %>%
+    tally() %>%
+    ggplot(aes(x = Attrition, y = n,fill=Attrition)) +
+    geom_bar(stat = "identity") +
+    theme_minimal()+
+    labs(x="Attrition", y="Count")+
+    ggtitle("Employee Attrition")+
+    geom_text(aes(label = n), vjust = -0.5, position = position_dodge(0.9))+
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+The bar chart below shows the total number of attritions by age. This chart shows a trend of attrition being higher for those between 25-45.
+```{r}
+# attrition count by age
+ggplot(data=data, aes(Age)) + 
+  geom_histogram(breaks=seq(20, 50, by=2), 
+                 col="red", 
+                 aes(fill=..count..))+
+  labs(x="Age", y="Attrition Count")+
+  scale_fill_gradient("Count", low="white", high="#f9766e")+
+  ggtitle("Attrition Count by Age ") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+The chart below also looks at attrition by age. However, this time the proportion of attrition is the focus at each age. This shows that the attrition in the 25-45 age range is not significantly higher when the total number of employees is considered. 
+```{r}
+# proportion of attrtion by age
+ggplot(data, aes(x = Age)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Age", y = "Attrition Proportion") + ggtitle("Attrition by Years in Current Role") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+The bar chart below shows that there is a weak trend in employees more likely to attrit earlier in their tenure in their current role. 
+```{r}
+# proportion of attrition by years in current role
+ggplot(data, aes(x = YearsInCurrentRole)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Years in Current Role", y = "Attrition Proportion") + ggtitle("Attrition by Years in Current Role") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+The Job Involvement bar chart is insightful in terms of attrition likelyhood. This was not surprising as you would expect those who are not involved in their job to explore other opportunities. 
+```{r}
+# proportion of attrition by job involvement
+ggplot(data, aes(x = JobInvolvement)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Job Involvement", y = "Attrition Proportion") + ggtitle("Attrition by Job Involvement") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+No significant insight can be gained when looking at the relationship between salary hike and attrition. This was surprising as the expectation was that those who receiving larger salary hikes were less likely to attrit.
+```{r}
+# proportion of attrition by salary hike
+ggplot(data, aes(x = PercentSalaryHike)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Salary Hike (%)", y = "Attrition Proportion") + ggtitle("Attrition by Salary Hike") + theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+***
+The more one travels for business, the more likely they are to attrit from this organization. 
+
+```{r}
+# proportion of attrition by business travel
+ggplot(data, aes(x = BusinessTravel)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Salary Hike (%)", y = "Attrition Proportion") + ggtitle("Attrition by Salary Hike") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+Human Resources, Technical Degrees, and Marketing education backgrounds are the most at risk of attriting. 
+```{r}
+# proportion of attrition by education field
+ggplot(data, aes(x = EducationField)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Education Field", y = "Attrition Proportion") + ggtitle("Attrition by Education Field") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+Sales Reps, Lab Techs, and Human Resources employees are the highest risk of attrition in terms of job role. 
+```{r}
+# proportion of attrition by job role
+ggplot(data, aes(x = JobRole)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Job Role", y = "Attrition Proportion") + ggtitle("Attrition by Job Role") + theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=30))
+```
+
+***
+Single employees are significantly more likely to attrit than married or divorced employees. 
+```{r}
+# proportion of attrition by marital status
+ggplot(data, aes(x = MaritalStatus)) + geom_bar(aes(fill = Attrition), position = 'fill') + labs(x = "Marital Status", y = "Attrition Proportion") + ggtitle("Attrition by Marital Status") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+### Prediction Model
+
+*** 
+Split data into training and testing data
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(data), size =.5*nrow(data), replace=F)
+train <- data[sample,]
+test <- data[-sample,]
+```
+*** 
+Build logistic regression model
+```{r}
+glm.fits <- glm(Attrition~.,data=train,family=binomial())
+summary(glm.fits) #view model summary
+coef(glm.fits) #view coefficients
+glm.probs <- predict(glm.fits, type="response") #store predictions to variable
+glm.probs[0:10] # explore first 10 predictions on training data
+```
+*** 
+Create confusion matrix to obtain model training accuracy and training error rate
+```{r}
+contrasts(data$Attrition) #validate that the dummy variable for Attrition indicates that 0 = No and 1 = Yes.
+
+#create a vector of class predictions 
+glm.pred=rep("No", 735)
+glm.pred[glm.probs>.5]="Yes"
+
+#create a confusion matrix
+cm <- table(glm.pred, train$Attrition)
+
+#check training accuracy
+(602+51)/735
+mean(glm.pred==train$Attrition)
+
+# calculate the training error rate
+1-((602+51)/735)
+```
+***
+Use the model to predict on the test data 
+```{r}
+## predict on the test data
+glm.probs <- predict(glm.fits,test,type="response") 
+
+#create a vector of class predictions 
+glm.pred=rep("No", 735)
+glm.pred[glm.probs>.5]="Yes"
+
+#create a confusion matrix
+cm <- table(glm.pred, test$Attrition)
+
+mean(glm.pred == test$Attrition)
+```
+*** 
+Create a function to obtain model metrics
+```{r}
+#create a function to obtain model metrics 
+metrics <- function(confusionmatrix) {
+  
+  n = sum(confusionmatrix) # number of instances
+  nc = nrow(confusionmatrix) #number of classes
+  diag = diag(confusionmatrix) # number of correctly classified instances per class
+  rowsums = apply(confusionmatrix,1,sum) # number of instances per class
+  colsums = apply(confusionmatrix,2,sum) # number of predictions per class
+  p = rowsums / n # distribution of instances of the actual classes
+  q = colsums / n # distribution of instances of the predicted classes
+  accuracy= sum(diag)/n # how accurate is the model
+  precision= diag / colsums # how accurate is the model when prediction is "Yes" Attrition
+  recall= diag/rowsums # what percentage of "Yes" attritions did model recognize
+  f1= 2 * precision * recall / (precision+recall)
+  
+  list(
+    accuracy,
+    precision,
+    recall,
+    f1
+  )
+}
+```
+***
+Run the confusion matrix through the function to obtain the metrics
+```{r}
+# run the confusion matrix for the glm model through the metrics function amd calculate the test error rate and other metrics
+c(glm_accuracy,glm_precision,glm_recall,glm_f1) %<-% metrics(cm)
+
+```
+***
+Recreate the logistic regression model using Stepwise method and explore the metrics. Stepwise regression begins with no variables in the model. It selects the variable that has the highest R-Squared and then repeats. The model stops adding variables when none of the remaining variables are significant. 
+```{r}
+step.model <- glm.fits %>% stepAIC(trace=FALSE)
+summary(step.model)
+step.probs <- predict(step.model,test,type="response")
+step.pred=rep("No", 735)
+step.pred[step.probs>.5]="Yes"
+step_cm <- table(step.pred, test$Attrition)
+
+c(step_accuracy,step_precision,step_recall,step_f1) %<-% metrics(step_cm)
+
+```
+***
+Recreate the logistic regression model using the reduced predictors method and explore the metrics. The predictors used here are based on what was deemed significant by the original logistic regression method above. 
+```{r}
+## recreate the model using reduced predictors
+Attritions = data
+Attritions$TravelFrequently = 0
+Attritions$TravelFrequently[Attritions$BusinessTravel=="Travel_Frequently"]=1
+Attritions$LifeSciences=0
+Attritions$LifeSciences[Attritions$EducationField==	"Life Sciences"]=1
+Attritions$Medical=0
+Attritions$Medical[Attritions$EducationField==	"Medical"]=1
+Attritions$Other=0
+Attritions$Other[Attritions$EducationField==	"Other"]=1
+Attritions$LaboratoryTechnician=0
+Attritions$LaboratoryTechnician[Attritions$JobRole == "Laboratory Technician"]=1
+Attritions$Single=0
+Attritions$Single[Attritions$MaritalStatus==	"Single"]=1
+Attritions$OvertimeYes=0
+Attritions$OvertimeYes[Attritions$OverTime==	"Yes"]=1
+
+set.seed(13)
+sample <- sample.int(n = nrow(Attritions), size =.5*nrow(Attritions), replace=F)
+Attritions_train <- Attritions[sample,]
+Attritions_test <- Attritions[-sample,]
+
+reduced = glm(Attrition ~ TravelFrequently + LifeSciences+ Medical+ Other+ LaboratoryTechnician+ Single+ OvertimeYes+ Age+ EnvironmentSatisfaction+ JobInvolvement+ JobSatisfaction+ NumCompaniesWorked+ PerformanceRating+ TrainingTimesLastYear+ YearsAtCompany+ YearsInCurrentRole+ YearsWithCurrManager, family=binomial, data=Attritions_train)
+summary(reduced)
+
+reduced.probs <- predict(reduced, Attritions_test,type="response")
+reduced.pred=rep("No", 735)
+reduced.pred[reduced.probs>.5]="Yes"
+red_cm <- table(reduced.pred, Attritions_test$Attrition)
+
+c(red_accuracy,red_precision,red_recall,red_f1) %<-% metrics(red_cm)
+```
+***
+The AIC (Akaike Information Criteron) is a metric that is used to evaluate the possiblity of overfitting. The smallest AIC may help avoid over-fitting. The reduced model has the best chance of avoiding over-fitting. 
+```{r}
+#compare the aic of the models
+glm.fits$aic
+step.model$aic
+reduced$aic
+```
+
+***
+Test to see if any decision trees outperform the Stepwise Logistic Regression Model which has been deemed the best model
+```{r}
+# fit a classification tree in order to predict attrition
+tree.attrition = tree(Attrition~.,train)
+summary(tree.attrition)
+
+#estimate the test error
+tree.pred=predict(tree.attrition, test, type="class")
+tree_cm<- table(tree.pred,test$Attrition)
+
+#obtain test metrics
+c(tree_accuracy,tree_precision,tree_recall,tree_f1) %<-% metrics(tree_cm)
+```
+
+***
+Fit a pruned tree and obtain test metrics
+
+```{r}
+set.seed(24)
+cv.attrition <- cv.tree(tree.attrition,FUN=prune.misclass)
+names(cv.attrition)
+cv.attrition
+
+#plot the error rate as a function of both size and k
+par(mfrow=c(1,2))
+plot(cv.attrition$size,cv.attrition$dev,type='b')
+plot(cv.attrition$k,cv.attrition$dev,type='b')
+```
+
+***
+The visualization shows the where the ideal number of trees which is then input in the final pruned tree model 
+```{r}
+#prune the tree to obtain the 14-node tree (14 is chosen since the plot shows it has the lowest dev which represents the test error)
+prune.tree=prune.misclass(tree.attrition,best=14)
+plot(prune.tree)
+text(prune.tree,pretty=0)
+
+#check performance of pruned tree on test set
+tree.pred = predict(prune.tree, test, type="class")
+prune_cm <- table(tree.pred, test$Attrition)
+
+#obtain test metrics
+c(prune_accuracy,prune_precision,prune_recall,prune_f1) %<-% metrics(prune_cm)
+```
+
+***
+Fit a bagged random forest model and obtain test metrics
+```{r}
+## fit a bagged RF model
+bag.attrition = randomForest(Attrition~.,data=train,mtry=31,importance=TRUE)
+bag.pred = predict(bag.attrition,newdata=test)
+bag_cm <- table(bag.pred,test$Attrition)
+
+#obtain test metrics
+c(bag_accuracy,bag_precision,bag_recall,bag_f1) %<-% metrics(bag_cm)
+
+```
+***
+Change the number of trees grown and obtain test metrics
+```{r}
+#change the number of trees grown
+rf.attrition = randomForest(Attrition~.,data=train,mtry=31,ntree=25)
+rf.pred = predict(rf.attrition,newdata=test)
+changed_cm <- table(rf.pred,test$Attrition)
+
+#obtain test metrics
+c(changed_accuracy,changed_precision,changed_recall,changed_f1) %<-% metrics(changed_cm)
+
+```
+***
+Now that test metrics have been obtained for all the Logistic Regression models and the Tree models a final comparision can be done to choose the best model.
+```{r}
+# create a dataframe to compare the metrics easier
+model <- c('Logistic Regression','Stepwise Logistic Regression','Reduced Logistic Regression','Decision Tree', 'Pruned Decision Tree', 'Bagged Random Forest', 'Changed Random Forest')
+accuracy <- c(glm_accuracy, step_accuracy, red_accuracy, tree_accuracy, prune_accuracy, bag_accuracy, changed_accuracy)
+precision <- c(glm_precision[2], step_precision[2], red_precision[2], tree_precision[2], prune_precision[2], bag_precision[2], changed_precision[2])
+recall <- c(glm_recall[2], step_recall[2], red_recall[2], tree_recall[2], prune_recall[2], bag_recall[2], changed_recall[2])
+f1 <- c(glm_f1[2], step_f1[2], red_f1[2], tree_f1[2], prune_f1[2], bag_f1[2], changed_f1[2])
+metrics_df <- data.frame(model, accuracy, precision,recall,f1)
+```
+***
+Accuracy measures the overall percentage of correct predictions for both Yes and No when predicting attrition. The most accurate model is the stepwise logistic regression model.
+
+```{r}
+#sort the dataframe by accuracy
+arrange(metrics_df,desc(accuracy))
+```
+***
+Precision measures how often the model is correct when predicting 'Yes' for attrition. While these precision scores may seem low, it should be noted that high precision is difficult to obtain in unbalanced class sizes. In this case, the imbalance is very clear as 16% of the employees in the dataset attritted, while the other 84% remain employed. The model w/ the best precision score is the logistic regression model followed by the stepwise model.
+
+```{r}
+#sort the dataframe by precision
+arrange(metrics_df,desc(precision))
+```
+
+***
+Recall measures the proportion of the actual 'Yes' values of attrition the model predicted, i.e the Stepwise model accurately identified 71.*% of the actual "Yes" attrition values. The stepwise logisitic regression model is middle of the pack in terms of recall; although all the scores in the top 4 are very close. 
+```{r}
+# sort the dataframe by recall
+arrange(metrics_df,desc(recall))
+```
+
+***
+The f1 score is a mean of the recall and precision scores. f1 score is considered the best metric as it takes into consideration a portion of the other metrics. The stepwise model has the best f1 score.
+```{r}
+# sort the dataframe by f1 score
+arrange(metrics_df,desc(f1))
+```
+
+***
+The best model is the stepwise model due to its superior precision. The other metrics are very close between the original model and stepwise model. The backwards model was not seriously considered due to its lower accuracy and lower precision in predicting who attritted. The step model also had a significantly lower AIC score compared to the other two which reduces the risk of overfitting.
+```{r}
+bestmodel <- step.model  
+```
+
+### Tutorial on Shiny Web Interface
+Please note that the code below is for reference. There is a separate file, shiny.R, that will need to be run to use the web interface of the prediction model. 
+
+The tutorial will consist of detailed commented code to explain all the functions used to create the Shiny product. 
+
+```{css, echo=FALSE}
+.scroll {
+  max-height: 50px;
+  overflow-y: auto;
+  background-color: black;
+}
+```
+
+***
+Below is the code to set up the ui (user interface) of the Shiny model. The ui is one of two requirements for Shiny to execute, the other requirement is server, for which additional detail is provided further down. Since the code on this page is for show and will not be executed, I will be providing additional context behind how the ui and server requirements are built in smaller (non-executing) code chunks.
+```{r eval=FALSE}
+ui <- fluidPage( # this function is used to create a display that automatically adjusts to the dimensions of the user's browser window. For this app, the fluidPage will consist of a fluidRow to hold the title and a mainPanel to contain the two tabs of the app. 
+  fluidRow( # used to build the layout up from a grid system. The purpose of the fluidRow here is to store a fluid titlePanel
+    titlePanel( #this function holds the title of the App 
+      h1("Employee Attrition Predictor", align="center")
+    )
+  ),
+  hr(), #hr, or horizontal rule. For this app, hr() is used to provide separation 
+  theme = shinytheme("superhero"), # preset theme of the application, this function is a quick way to provide a preset design/template to the app
+  mainPanel( #designated main area of the app. For this app, it will store the the two tabs. 
+    
+    tabsetPanel( # creats a tabset to help divide the ouput into multiple independently viewable sections. This is used in this app to separate the individual/manual input of predictors in the first tab from the second tab which allows an easier input through  uploading a csv
+                type="tabs", 
+                tabPanel("Single Prediction", #creates a tab panel; here it is being used to store the first of the two tabs - the Single Prediction
+                         hr(),
+                         textOutput("Pred"), #renders a reactive output variable as text. Here it will render "Pred" from the server function,(below) which is the prediction of probability of attrition. 
+                         hr(),
+                         fluidRow(
+                           column(3, # this function creates columns to the store the data within it. The"3" represents the column width (max is 12). 
+                                  h4("Input/Select Predictors"),
+                                  numericInput(inputId = 'Age', label = 'Age', value = 18, min = 18, max = 99, step = NA, width = NULL), # creates an input control for entry of numeric values; in this situation it allows the app user to input the age predictor, the "value" chooses the default/initial value to be shown. inputId is the slot that will be used to access the value. Below in the server function, the inputId is used to connect the input to the reactive dataframe. 
+                                  selectInput(inputId = 'BusinessTravel', label = 'Business Travel', c("Travel_Rarely", "Travel_Frequently", "Non-Travel"), selected = "Non-Travel"), #creates a select list that can be used to choose a single or multiple items from a list of values. In this case, it allows for a single value (Business Travel) to be selected and used as a predictor. 
+                                  numericInput(inputId = 'DistanceFromHome', label = 'Distance From Home', value = 7, min = 0, max = 330, step = NA, width = NULL),
+                                  numericInput(inputId = 'Education', label = 'Education Level', value = 0, min = 0, max = 5, step = NA, width = NULL),
+                                  selectInput(inputId = 'EducationField', label = 'Education Field', c("Human Resources", "Life Sciences", "Marketing", "Medical", "Other", "Technical Degree"), selected = "Medical")
+                                  
+                           ),
+                           column(3, br(), br(), br(),
+                                  numericInput(inputId = 'EnvironmentSatisfaction', label = 'Environment Satsifaction', value = 3, min = 1, max = 4, step = NA, width = NULL),
+                                  numericInput(inputId = 'JobInvolvement', label = 'Job Involvement', value = 3, min = 1, max = 4, step = NA, width = NULL),
+                                  selectInput(inputId = "JobRole", label = "Job Role", c("Healthcare Representative", "Human Resources", "Labratory Technician", "Manager", "Manufacturing Director", "Research Director", "Research Scientist", "Sales Executive", "Sales Representative"), selected = "Manager"),
+                                  numericInput(inputId = "JobSatisfaction", label = "Job Satisfaction", value = 3, min = 1, max =4, step = NA, width = NULL),
+                                  selectInput(inputId = "MaritalStatus", label = "Marital Status", c("Divorced", "Married", "Single"), selected = "Married"),
+                                  
+                           ),
+                           column(3, br(), br(), br(),
+                                  numericInput(inputId = "NumCompaniesWorked", label = "Number of Companies Worked", value = 2, min = 0, max = 20, step = NA, width = NULL),
+                                  selectInput(inputId = "OverTime", label = "Overtime", c("No", "Yes"), selected = "No"),
+                                  numericInput(inputId = "PercentSalaryHike", label = "Salary Hike (%)", value = 14, min = 0, max = 100, step = NA, width = NULL),
+                                  numericInput(inputId = "PerformanceRating", label = "Performance Rating", value = 3, min = 1, max = 5, step = NA, width = NULL),
+                                  numericInput(inputId = "TrainingTimesLastYear", label = "Number of Trainings Attended Last Year", value = 3, min = 0, max = 50, step = NA, width = NULL)
+                           ),
+                           column(3, br(), br(), br(),
+                                  numericInput(inputId = "WorkLifeBalance", label = "Work Life Balance Satisfaction", value = 3, min = 1, max = 4, step = NA, width = NULL),
+                                  numericInput(inputId = "YearsAtCompany", label = "Number of Years at Company", value = 15, min = 0, max = 99, step = NA, width = NULL),
+                                  numericInput(inputId = "YearsInCurrentRole", label = "Number of Years in Current Role", value = 3, min = 0, max = 50, step = NA, width = NULL),
+                                  numericInput(inputId = "YearsSinceLastPromotion", label = "Number of Years Since Last Promotion", value = 10, min = 0, max = 30, step = NA, width = NULL),
+                                  numericInput(inputId = "YearsWithCurrManager", label = "Number of Years With Current Manager", value = 3, min = 0, max = 20, step = NA, width = NULL)
+                           )
+                           
+                         ),
+                         hr(),
+                         
+                         fluidRow(h5("The prediction model above was built using the IBM HR Analytics Employee Attrition and Performance dataset. The dataset was created by IBM data scientists to help uncover the factors that lead to employee attrition and allow exploratory data analysis for an organization."))
+                         
+                         ),
+                tabPanel("Predict from csv", # this tab allows the user to input a csv and obtain an output of the csv in a table format with an added column containing the prediction probability of attrition
+                         h5("Uploading a csv containing employee data. The data will render a table with a new column added at the end with the probability of attrition."),
+                         hr(),
+                         fileInput("csvFile", "Upload csv"), #creates a file upload control that can be used to upload one or more files
+                         tableOutput("Prediction"), #renders a table within the application page; here this function calls the "Prediction" from the reactive function in the Server code below
+                         
+                  
+                )
+    )
+                
+                )
+    
+    
+    
+      )    
+```
+
+
+```{r eval=FALSE}
+server = function (input, output) {
+  df <- reactive({ #wraps a normal expression to create a reactive expression. The reactive expression in this case is the data.frame which will update a create a dataframe based on the user inputs below. These inputs are directly from the UI. This df will be used to make predictions as shown below.  
+    data.frame(Age=input$Age,
+               
+               BusinessTravel=input$BusinessTravel,
+               
+               DistanceFromHome=input$DistanceFromHome,
+               
+               Education=input$Education,
+               
+               EducationField=input$EducationField,
+               
+               EnvironmentSatisfaction=input$EnvironmentSatisfaction,
+               
+               JobInvolvement=input$JobInvolvement,
+               
+               JobRole=input$JobRole,
+               
+               JobSatisfaction=input$JobSatisfaction,
+               
+               MaritalStatus=input$MaritalStatus,
+               
+               NumCompaniesWorked=input$NumCompaniesWorked,
+               
+               OverTime=input$OverTime, 
+               
+               PercentSalaryHike=input$PercentSalaryHike,
+               
+               PerformanceRating=input$PerformanceRating,
+               
+               TrainingTimesLastYear=input$TrainingTimesLastYear,
+               
+               WorkLifeBalance=input$WorkLifeBalance,
+               
+               YearsAtCompany=input$YearsAtCompany,
+               
+               YearsInCurrentRole=input$YearsInCurrentRole,
+               
+               YearsSinceLastPromotion=input$YearsSinceLastPromotion,
+               
+               YearsWithCurrManager=input$YearsWithCurrManager
+               
+               
+               
+    )
+  })
+  
+  pred <- reactive({ 
+    predict(bestmodel,df(), type="response") # the prediction occurs here on the reactive dataframe created by user inputs
+  })
+  
+  output$Pred <- renderText({paste("The probability of attrition is",round(pred(), digits=2),".")}) # the renderText function makes a reactive version of the given function in a single-element charactor vector. The text being rendered is the prediction made in the line of code above. 
+  
+  rawData <- eventReactive(input$csvFile, { #eventReactive responds to "event-like" reactive inputs (in this case, the csv file containing the data for predictions)
+    read.csv(input$csvFile$datapath)
+  })
+  
+
+  })
+  
+  prediction <- reactive({
+    predict(bestmodel,rawData(),type="response")
+  })
+  
+  output$Prediction <- renderTable({cbind(rawData(), prediction())})
+  
+  
+  
+} 
+```
+
+
+```{r eval=FALSE}
+shinyApp(ui=ui,server=server) # creates the Shiny app objects
+```
